@@ -52,12 +52,26 @@ public:
 		auto bestAsk = AskBook.begin();
 		if (bestBid->first >= bestAsk->first) {
 			std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
-			removeOrder(bestBid->first, Side::BUY);
-			removeOrder(bestAsk->first, Side::SELL);
+			if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
+				removeOrder(bestBid->first, Side::BUY);
+				removeOrder(bestAsk->first, Side::SELL);
+			}
+			else if (bestBid->second.front().quantity > bestAsk->second.front().quantity) {
+				bestBid->second.front().quantity -= bestAsk->second.front().quantity;
+				removeOrder(bestAsk->first, Side::SELL);
+				matchOrder();
+			}
+			else {
+				bestAsk->second.front().quantity -= bestBid->second.front().quantity;
+				removeOrder(bestBid->first, Side::BUY);
+				matchOrder();
+			}
 			return;
 		}
 		std::cout << "No matching orders\n";
 	}
+
+	// Prints the full OrderBook
 	void printBook() {
 		for (auto pair : BidBook) {
 			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
@@ -66,7 +80,7 @@ public:
 			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: SELL | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
 		}
 	}
-
+	// Prints requested Side's Book
 	void printBook(Side side) {
 
 		if (side == Side::BUY) {

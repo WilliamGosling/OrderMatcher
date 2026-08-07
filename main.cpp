@@ -40,13 +40,13 @@ void matchOrderTest() {
 
 	BidOrder.orderID = 500;
 	BidOrder.price = 100;
-	BidOrder.quantity = 50;
+	BidOrder.quantity = 51;
 	BidOrder.side = Side::BUY;
 	BidOrder.timestamp = 123456;
 
 	AskOrder.orderID = 501;
 	AskOrder.price = 100;
-	AskOrder.quantity = 50;
+	AskOrder.quantity = 52;
 	AskOrder.side = Side::SELL;
 	AskOrder.timestamp = 1234567;
 
