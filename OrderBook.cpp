@@ -92,26 +92,48 @@ void OrderBook::printBook(Side side) {
 	}
 }
 
-Order OrderBook::searchOrderByID(OrderID orderID) {
+std::list<Order>::iterator OrderBook::searchOrderByID(OrderID orderID) {
 
-	Order newOrder;
+	std::list<Order>::iterator iterator;
 
 	if (!orderID) {
 		std::cout << "Invalid Order ID\n";
-		return newOrder;
+		return iterator;
 	}
 
 	auto map = OrderIDMap.find(orderID);
 
 	if (map == OrderIDMap.end()) {
 		std::cout << "Order not found\n";
-		return newOrder;
+		return iterator;
 	}
 
-	std::list<Order>::iterator orderIterator = map->second;
+	iterator = map->second;
 
 
-	std::cout << std::format("Order {} found | Price: {}\n", orderIterator->orderID, orderIterator->price);
+	std::cout << std::format("Order {} found | Price: {}\n", iterator->orderID, iterator->price);
 
-	return newOrder;
+	return iterator;
+}
+
+void OrderBook::cancelOrder(OrderID orderID) {
+
+	std::list<Order>::iterator orderIterator = searchOrderByID(orderID);
+
+	Side orderSide = orderIterator->side;
+	Price orderPrice = orderIterator->price;
+
+	if (orderSide == Side::BUY) {
+		BidBook.at(orderPrice).erase(orderIterator);
+		if (BidBook[orderPrice].empty()) {
+			BidBook.erase(orderPrice);
+		}
+	}
+	else {
+		AskBook.at(orderPrice).erase(orderIterator);
+		if (AskBook[orderPrice].empty()) {
+			AskBook.erase(orderPrice);
+		}
+	}
+	OrderIDMap.erase(orderID);
 }

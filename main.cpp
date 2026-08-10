@@ -55,13 +55,18 @@ void matchOrderTest() {
 
 	book.printBook(); // Should have both Orders
 
-	book.matchOrder();
+	std::cout << "State after cancelling Order 500\n";
+	book.cancelOrder(500);
 
-	book.printBook(); // Should have no Orders
+	book.matchOrder(); // Should now fail with cancel of order 501
 
-	book.searchOrderByID(501); // Prints the OrderID and Price if found
+	book.printBook(); // Should have 500 Orders
+
+	//book.searchOrderByID(501); // Prints the OrderID and Price if found
+
+
+
 }
-
 
 int main() {
 

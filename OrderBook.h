@@ -17,9 +17,10 @@ private:
 	
 public:
 	void addOrder(const Order& newOrder); // Adds a new order
-	void removeOrder(const Price price, const enum Side side); // Removes the Front Order at given Price and Side - Order with the top priority 
+	void removeOrder(const Price price, const enum Side side); // Removes the Front Order at given Price and Side - Order with the top priority
+	void cancelOrder(OrderID orderID);
 	void matchOrder(); // Matches orders at top of priority
 	void printBook(); // Prints entire state of OrderBook
 	void printBook(Side side); // Prints state of Side's Book
-	Order searchOrderByID(OrderID orderID);
+	std::list<Order>::iterator searchOrderByID(OrderID orderID);
 };
