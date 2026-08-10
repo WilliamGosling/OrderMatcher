@@ -1,4 +1,4 @@
-#include "OrderBook.cpp"
+#include "OrderBook.h"
 
 bool addOrderTest() {
 
@@ -59,11 +59,14 @@ void matchOrderTest() {
 
 	book.printBook(); // Should have no Orders
 
+	book.searchOrderByID(501); // Prints the OrderID and Price if found
 }
+
 
 int main() {
 
 	//addOrderTest();
 	matchOrderTest();
+
 	return 0;
 }

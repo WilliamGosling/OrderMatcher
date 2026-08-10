@@ -1,97 +1,117 @@
-#include <iostream>
-#include <map>
-#include <queue>
-#include <format>
-#include "OrderTypes.h"
+#include "OrderBook.h"
 
-using Price = uint64_t;
+void OrderBook::addOrder(const Order& newOrder) {
 
-class OrderBook {
-private:
-	std::map<Price, std::queue<Order>, std::greater<Price>> BidBook; // Greater sorts keys in descending order
-	std::map<Price, std::queue<Order>> AskBook;
-
-
-
-public:
-
-	void addOrder(const Order& newOrder) {
-
-		switch (newOrder.side) {
-		case Side::BUY:
-			BidBook[newOrder.price].push(newOrder);
-			break;
-		case Side::SELL:
-			AskBook[newOrder.price].push(newOrder);
-			break;
-		default:
-			std::cout << "Invalid Order\n";
-		}
-	}
-	void removeOrder(const Price price, const enum Side side) {
-
-		switch (side) {
-		case Side::BUY:
-			BidBook.at(price).pop();
-			if (BidBook.at(price).empty()) BidBook.erase(price);
-			break;
-		case Side::SELL:
-			AskBook.at(price).pop();
-			if (AskBook.at(price).empty()) AskBook.erase(price);
-			break;
-		default:
-			std::cout << "Invalid Order\n";
-		}
+	if (OrderIDMap.find(newOrder.orderID) != OrderIDMap.end()) {
+		std::cout << std::format("Order with ID : {} already exists\n", newOrder.orderID);
+		return;
 	}
 
-	void matchOrder() {
 
-		if (BidBook.empty() || AskBook.empty()) return;
-
-		auto bestBid = BidBook.begin();
-		auto bestAsk = AskBook.begin();
-		if (bestBid->first >= bestAsk->first) {
-			std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
-			if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
-				removeOrder(bestBid->first, Side::BUY);
-				removeOrder(bestAsk->first, Side::SELL);
-			}
-			else if (bestBid->second.front().quantity > bestAsk->second.front().quantity) {
-				bestBid->second.front().quantity -= bestAsk->second.front().quantity;
-				removeOrder(bestAsk->first, Side::SELL);
-				matchOrder();
-			}
-			else {
-				bestAsk->second.front().quantity -= bestBid->second.front().quantity;
-				removeOrder(bestBid->first, Side::BUY);
-				matchOrder();
-			}
-			return;
-		}
-		std::cout << "No matching orders\n";
+	switch (newOrder.side) {
+	case Side::BUY:
+		BidBook[newOrder.price].push_back(newOrder);
+		OrderIDMap[newOrder.orderID] = std::prev(BidBook[newOrder.price].end());
+		break;
+	case Side::SELL:
+		AskBook[newOrder.price].push_back(newOrder);
+		OrderIDMap[newOrder.orderID] = std::prev(AskBook[newOrder.price].end());
+		break;
+	default:
+		std::cout << "Invalid Order\n";
 	}
+}
+void OrderBook::removeOrder(const Price price, const enum Side side) {
 
-	// Prints the full OrderBook
-	void printBook() {
+	switch (side) {
+	case Side::BUY:
+		BidBook.at(price).pop_front();
+		if (BidBook.at(price).empty()) BidBook.erase(price);
+		break;
+	case Side::SELL:
+		AskBook.at(price).pop_front();
+		if (AskBook.at(price).empty()) AskBook.erase(price);
+		break;
+	default:
+		std::cout << "Invalid Order\n";
+	}
+}
+
+void OrderBook::matchOrder() {
+
+	if (BidBook.empty() || AskBook.empty()) return;
+
+	auto bestBid = BidBook.begin();
+	auto bestAsk = AskBook.begin();
+	if (bestBid->first >= bestAsk->first) {
+		std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
+		if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
+			OrderIDMap.erase(bestAsk->second.front().orderID);
+			OrderIDMap.erase(bestBid->second.front().orderID);
+			removeOrder(bestBid->first, Side::BUY);
+			removeOrder(bestAsk->first, Side::SELL);
+		}
+		else if (bestBid->second.front().quantity > bestAsk->second.front().quantity) {
+			bestBid->second.front().quantity -= bestAsk->second.front().quantity;
+			OrderIDMap.erase(bestAsk->second.front().orderID);
+			removeOrder(bestAsk->first, Side::SELL);
+			matchOrder();
+		}
+		else {
+			bestAsk->second.front().quantity -= bestBid->second.front().quantity;
+			OrderIDMap.erase(bestBid->second.front().orderID);
+			removeOrder(bestBid->first, Side::BUY);
+			matchOrder();
+		}
+		return;
+	}
+	std::cout << "No matching orders\n";
+}
+
+// Prints the full OrderBook
+void OrderBook::printBook() {
+	for (auto pair : BidBook) {
+		std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
+	}
+	for (auto pair : AskBook) {
+		std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: SELL | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
+	}
+}
+// Prints requested Side's Book
+void OrderBook::printBook(Side side) {
+
+	if (side == Side::BUY) {
 		for (auto pair : BidBook) {
 			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
 		}
+	}
+	else {
 		for (auto pair : AskBook) {
 			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: SELL | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
 		}
 	}
-	// Prints requested Side's Book
-	void printBook(Side side) {
+}
 
-		if (side == Side::BUY) {
-			for (auto pair : BidBook) {
-				std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
-			}
-		}
-		else {
-			for (auto pair : AskBook) {
-				std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: SELL | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
-			}
-		}
+Order OrderBook::searchOrderByID(OrderID orderID) {
+
+	Order newOrder;
+
+	if (!orderID) {
+		std::cout << "Invalid Order ID\n";
+		return newOrder;
 	}
-};
+
+	auto map = OrderIDMap.find(orderID);
+
+	if (map == OrderIDMap.end()) {
+		std::cout << "Order not found\n";
+		return newOrder;
+	}
+
+	std::list<Order>::iterator orderIterator = map->second;
+
+
+	std::cout << std::format("Order {} found | Price: {}\n", orderIterator->orderID, orderIterator->price);
+
+	return newOrder;
+}
