@@ -7,7 +7,6 @@ void OrderBook::addOrder(const Order& newOrder) {
 		return;
 	}
 
-
 	switch (newOrder.side) {
 	case Side::BUY:
 		BidBook[newOrder.price].push_back(newOrder);
@@ -70,26 +69,40 @@ void OrderBook::matchOrder() {
 
 // Prints the full OrderBook
 void OrderBook::printBook() {
+	std::cout << "-------------BidBook-------------\n";
 	for (auto pair : BidBook) {
-		std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
+		for (auto orders : pair.second) {
+			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", orders.orderID, pair.first, orders.quantity, orders.timestamp);
+		}
 	}
+	std::cout << "---------------------------------\n-------------AskBook-------------\n";
 	for (auto pair : AskBook) {
-		std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: SELL | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
+		for (auto orders : pair.second) {
+			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", orders.orderID, pair.first, orders.quantity, orders.timestamp);
+		}
 	}
+	std::cout << "---------------------------------\n";
 }
 // Prints requested Side's Book
 void OrderBook::printBook(Side side) {
 
 	if (side == Side::BUY) {
+		std::cout << "-------------BidBook-------------\n";
 		for (auto pair : BidBook) {
-			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
+			for (auto orders : pair.second) {
+				std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", orders.orderID, pair.first, orders.quantity, orders.timestamp);
+			}
 		}
 	}
 	else {
+		std::cout << "-------------AskBook-------------\n";
 		for (auto pair : AskBook) {
-			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: SELL | Timestamp: {} |\n", pair.second.front().orderID, pair.first, pair.second.front().quantity, pair.second.front().timestamp);
+			for (auto orders : pair.second) {
+				std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", orders.orderID, pair.first, orders.quantity, orders.timestamp);
+			}
 		}
 	}
+	std::cout << "---------------------------------\n";
 }
 
 std::list<Order>::iterator OrderBook::searchOrderByID(OrderID orderID) {
@@ -101,15 +114,14 @@ std::list<Order>::iterator OrderBook::searchOrderByID(OrderID orderID) {
 		return iterator;
 	}
 
-	auto map = OrderIDMap.find(orderID);
+	auto mapOrderID = OrderIDMap.find(orderID);
 
-	if (map == OrderIDMap.end()) {
+	if (mapOrderID == OrderIDMap.end()) {
 		std::cout << "Order not found\n";
 		return iterator;
 	}
 
-	iterator = map->second;
-
+	iterator = mapOrderID->second;
 
 	std::cout << std::format("Order {} found | Price: {}\n", iterator->orderID, iterator->price);
 
@@ -136,4 +148,30 @@ void OrderBook::cancelOrder(OrderID orderID) {
 		}
 	}
 	OrderIDMap.erase(orderID);
+}
+
+void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Side side) {
+
+	std::list<Order>::iterator orderIterator = searchOrderByID(orderID);
+
+	Price orderPrice = orderIterator->price;
+	Quantity orderQuantity = orderIterator->quantity;
+	Timestamp orderTime = orderIterator->timestamp;
+
+	// Time priority not altered if Quantity reduced as does not disadvantage Orders newer than it
+	if (orderQuantity > quantity && orderPrice == price) {
+		orderIterator->quantity = quantity; // Should reduce quantity of Order
+	}
+	else {
+		Order newOrder;
+		newOrder.orderID = orderID;
+		newOrder.price = price;
+		newOrder.quantity = quantity;
+		newOrder.side = side;
+		newOrder.timestamp = orderTime;
+		cancelOrder(orderID);
+		addOrder(newOrder);
+	}
+
+	//std::cout << std::format("Order #  {} added | <Price: {} Quantity: {} Side: {} Timestamp: {}>\n", orderID, price, quantity, side, orderTime);
 }

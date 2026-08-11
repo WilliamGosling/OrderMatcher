@@ -58,19 +58,27 @@ void matchOrderTest() {
 	std::cout << "State after cancelling Order 500\n";
 	book.cancelOrder(500);
 
-	book.matchOrder(); // Should now fail with cancel of order 501
+	//book.matchOrder(); // Should now fail with cancel of order 501
+
+	Order AskOrder2;
+	AskOrder2.orderID = 503;
+	AskOrder2.price = 100;
+	AskOrder2.quantity = 52;
+	AskOrder2.side = Side::SELL;
+	AskOrder2.timestamp = 1234567;
+
+	book.addOrder(AskOrder2);
+
+	book.printBook(Side::SELL); 
+
+	book.modifyOrder(501, 100, 53, Side::SELL);
 
 	book.printBook(); // Should have 500 Orders
-
-	//book.searchOrderByID(501); // Prints the OrderID and Price if found
-
-
 
 }
 
 int main() {
 
-	//addOrderTest();
 	matchOrderTest();
 
 	return 0;
