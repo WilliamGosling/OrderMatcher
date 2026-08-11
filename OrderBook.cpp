@@ -105,12 +105,13 @@ void OrderBook::printBook(Side side) {
 	std::cout << "---------------------------------\n";
 }
 
-std::list<Order>::iterator OrderBook::searchOrderByID(OrderID orderID) {
+std::list<Order>::iterator OrderBook::searchOrderByID(OrderID orderID, bool& successFlag) {
 
 	std::list<Order>::iterator iterator;
 
 	if (!orderID) {
 		std::cout << "Invalid Order ID\n";
+		successFlag = false;
 		return iterator;
 	}
 
@@ -118,19 +119,25 @@ std::list<Order>::iterator OrderBook::searchOrderByID(OrderID orderID) {
 
 	if (mapOrderID == OrderIDMap.end()) {
 		std::cout << "Order not found\n";
+		successFlag = false;
 		return iterator;
 	}
 
 	iterator = mapOrderID->second;
 
-	std::cout << std::format("Order {} found | Price: {}\n", iterator->orderID, iterator->price);
-
+	successFlag = true;
 	return iterator;
 }
 
 void OrderBook::cancelOrder(OrderID orderID) {
 
-	std::list<Order>::iterator orderIterator = searchOrderByID(orderID);
+	bool successFlag = true;
+	std::list<Order>::iterator orderIterator = searchOrderByID(orderID, successFlag);
+
+	if (!successFlag) {
+		std::cout << "Iterator not found | <OrderBook::cancelOrder>\n";
+		return;
+	}
 
 	Side orderSide = orderIterator->side;
 	Price orderPrice = orderIterator->price;
@@ -152,7 +159,13 @@ void OrderBook::cancelOrder(OrderID orderID) {
 
 void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Side side) {
 
-	std::list<Order>::iterator orderIterator = searchOrderByID(orderID);
+	bool successFlag = true;
+	std::list<Order>::iterator orderIterator = searchOrderByID(orderID, successFlag);
+
+	if (!successFlag) {
+		std::cout << "Iterator not found | <OrderBook::modifyOrder>\n";
+		return;
+	}
 
 	Price orderPrice = orderIterator->price;
 	Quantity orderQuantity = orderIterator->quantity;
@@ -172,6 +185,19 @@ void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Sid
 		cancelOrder(orderID);
 		addOrder(newOrder);
 	}
+}
 
-	//std::cout << std::format("Order #  {} added | <Price: {} Quantity: {} Side: {} Timestamp: {}>\n", orderID, price, quantity, side, orderTime);
+std::list<Order>::iterator OrderBook::getOrderInformation(OrderID orderID) {
+	
+	bool successFlag = true;
+	std::list<Order>::iterator orderIterator = searchOrderByID(orderID, successFlag);
+
+	if (!successFlag) {
+		std::cout << "Iterator not found | <OrderBook::cancelOrder>\n";
+		return orderIterator;
+	}
+
+	std::cout << std::format("Order {} Found\nPrice: {}\nQuantity: {}\nSide: {}\nTimestamp: {}\n", orderIterator->orderID, orderIterator->price, orderIterator->quantity, (orderIterator->side == Side::BUY) ? "Bid" : "Ask", orderIterator->timestamp);
+	std::cout << "------------------\n";
+	return orderIterator;
 }

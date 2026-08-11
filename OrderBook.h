@@ -25,5 +25,6 @@ public:
 	void matchOrder(); // Matches orders at top of priority
 	void printBook(); // Prints entire state of OrderBook
 	void printBook(Side side); // Prints state of Side's Book
-	std::list<Order>::iterator searchOrderByID(OrderID orderID); // Returns an iterator pointing to the Order at the given ID
+	std::list<Order>::iterator getOrderInformation(OrderID orderID);
+	std::list<Order>::iterator searchOrderByID(OrderID orderID, bool& successFlag); // Returns an iterator pointing to the Order at the given ID
 };

@@ -75,6 +75,8 @@ void matchOrderTest() {
 
 	book.printBook(); // Should have 500 Orders
 
+	auto it = book.getOrderInformation(501);
+	std::cout << std::format("Recieved information : {} {} {} {}\n", it->orderID, it->price, it->quantity, (it->side == Side::BUY) ? "Bid" : "Ask");
 }
 
 int main() {
