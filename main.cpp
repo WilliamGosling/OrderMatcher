@@ -1,82 +1,62 @@
 #include "OrderBook.h"
 
-bool addOrderTest() {
-
-	OrderBook book;
-	Order newOrder;
-	newOrder.orderID = 1234;
-	newOrder.price = 50;
-	newOrder.quantity = 10;
-	newOrder.side = Side::BUY;
-	newOrder.timestamp = 1234567;
-	const Order order = newOrder;
-
-	Order newOrder2;
-	newOrder2.orderID = 1234;
-	newOrder2.price = 51;
-	newOrder2.quantity = 10;
-	newOrder2.side = Side::BUY;
-	newOrder2.timestamp = 1234567;
-	const Order order2 = newOrder2;
-
-
-	book.addOrder(order);
-	book.addOrder(order2);
-	book.printBook(order.side);
-	book.removeOrder(51, Side::BUY);
-
-	std::cout << "--------------------\n";
-
-	book.printBook(order.side);
-
-	return true;
-}
-
 void matchOrderTest() {
 
 	OrderBook book;
 	Order BidOrder;
+	Order BidOrder2;
 	Order AskOrder;
+	Order AskOrder2;
 
 	BidOrder.orderID = 500;
 	BidOrder.price = 100;
 	BidOrder.quantity = 51;
 	BidOrder.side = Side::BUY;
-	BidOrder.timestamp = 123456;
+	BidOrder.timestamp = static_cast<uint64_t>(book.getOrderTimestamp().count());
+
+	BidOrder2.orderID = 505;
+	BidOrder2.price = 103;
+	BidOrder2.quantity = 51;
+	BidOrder2.side = Side::BUY;
+	BidOrder2.timestamp = static_cast<uint64_t>(book.getOrderTimestamp().count());
 
 	AskOrder.orderID = 501;
-	AskOrder.price = 100;
+	AskOrder.price = 101;
 	AskOrder.quantity = 52;
 	AskOrder.side = Side::SELL;
-	AskOrder.timestamp = 1234567;
+	AskOrder.timestamp = static_cast<uint64_t>(book.getOrderTimestamp().count());
 
-	book.addOrder(BidOrder);
-	book.addOrder(AskOrder);
-
-	book.printBook(); // Should have both Orders
-
-	std::cout << "State after cancelling Order 500\n";
-	book.cancelOrder(500);
-
-	//book.matchOrder(); // Should now fail with cancel of order 501
-
-	Order AskOrder2;
-	AskOrder2.orderID = 503;
-	AskOrder2.price = 100;
+	AskOrder2.orderID = 502;
+	AskOrder2.price = 101;
 	AskOrder2.quantity = 52;
 	AskOrder2.side = Side::SELL;
-	AskOrder2.timestamp = 1234567;
+	AskOrder2.timestamp = static_cast<uint64_t>(book.getOrderTimestamp().count());
 
+	book.addOrder(BidOrder);
+	book.addOrder(BidOrder2);
+	book.addOrder(AskOrder);
 	book.addOrder(AskOrder2);
 
-	book.printBook(Side::SELL); 
+	book.printBook();
 
-	book.modifyOrder(501, 100, 53, Side::SELL);
+	//book.printBook(); // Should have both Orders
+	//std::cout << "State after cancelling Order 500\n";
+	//book.printBook(Side::SELL); 
 
-	book.printBook(); // Should have 500 Orders
+	//book.modifyOrder(501, 100, 53, Side::SELL, static_cast<uint64_t>(book.getOrderTimestamp().count()));
 
-	auto it = book.getOrderInformation(501);
-	std::cout << std::format("Recieved information : {} {} {} {}\n", it->orderID, it->price, it->quantity, (it->side == Side::BUY) ? "Bid" : "Ask");
+	//book.printBook(); // Should have 500 Orders
+	//auto it = book.getOrderInformation(501);
+	//std::cout << std::format("Recieved information : {} {} {} {}\n", it->orderID, it->price, it->quantity, (it->side == Side::BUY) ? "Bid" : "Ask");
+
+	book.marketData(1);
+
+	book.matchOrder();
+
+	book.printBook();
+
+
+	
 }
 
 int main() {

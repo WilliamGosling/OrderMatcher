@@ -19,6 +19,9 @@ void OrderBook::addOrder(const Order& newOrder) {
 	default:
 		std::cout << "Invalid Order\n";
 	}
+	auto addedTime = static_cast<uint64_t>(getOrderTimestamp().count());
+
+	std::cout << std::format(" Order {} Added @ {}\n", newOrder.orderID, addedTime);
 }
 void OrderBook::removeOrder(const Price price, const enum Side side) {
 
@@ -38,11 +41,8 @@ void OrderBook::removeOrder(const Price price, const enum Side side) {
 
 void OrderBook::matchOrder() {
 
-	if (BidBook.empty() || AskBook.empty()) return;
 
-	auto bestBid = BidBook.begin();
-	auto bestAsk = AskBook.begin();
-	if (bestBid->first >= bestAsk->first) {
+	/*if (bestBid->first >= bestAsk->first) {
 		std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
 		if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
 			OrderIDMap.erase(bestAsk->second.front().orderID);
@@ -63,7 +63,36 @@ void OrderBook::matchOrder() {
 			matchOrder();
 		}
 		return;
+	} */
+	while (!BidBook.empty() || !AskBook.empty()) {
+
+		auto bestBid = BidBook.begin();
+		auto bestAsk = AskBook.begin();
+
+		if (bestBid->first < bestAsk->first) {
+			break;
+		}
+
+		std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
+		if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
+			OrderIDMap.erase(bestAsk->second.front().orderID);
+			OrderIDMap.erase(bestBid->second.front().orderID);
+			removeOrder(bestBid->first, Side::BUY);
+			removeOrder(bestAsk->first, Side::SELL);
+		}
+		else if (bestBid->second.front().quantity > bestAsk->second.front().quantity) {
+			bestBid->second.front().quantity -= bestAsk->second.front().quantity;
+			OrderIDMap.erase(bestAsk->second.front().orderID);
+			removeOrder(bestAsk->first, Side::SELL);
+		}
+		else {
+			bestAsk->second.front().quantity -= bestBid->second.front().quantity;
+			OrderIDMap.erase(bestBid->second.front().orderID);
+			removeOrder(bestBid->first, Side::BUY);
+
+		}
 	}
+
 	std::cout << "No matching orders\n";
 }
 
@@ -144,20 +173,23 @@ void OrderBook::cancelOrder(OrderID orderID) {
 
 	if (orderSide == Side::BUY) {
 		BidBook.at(orderPrice).erase(orderIterator);
-		if (BidBook[orderPrice].empty()) {
+		if (BidBook.at(orderPrice).empty()) {
 			BidBook.erase(orderPrice);
 		}
 	}
 	else {
 		AskBook.at(orderPrice).erase(orderIterator);
-		if (AskBook[orderPrice].empty()) {
+		if (AskBook.at(orderPrice).empty()) {
 			AskBook.erase(orderPrice);
 		}
 	}
 	OrderIDMap.erase(orderID);
+	auto cancelledTime = static_cast<uint64_t>(getOrderTimestamp().count());
+
+	std::cout << std::format(" Order {} Cancelled @ {}\n", orderID, cancelledTime);
 }
 
-void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Side side) {
+void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Side side, Timestamp timestamp) {
 
 	bool successFlag = true;
 	std::list<Order>::iterator orderIterator = searchOrderByID(orderID, successFlag);
@@ -169,11 +201,11 @@ void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Sid
 
 	Price orderPrice = orderIterator->price;
 	Quantity orderQuantity = orderIterator->quantity;
-	Timestamp orderTime = orderIterator->timestamp;
 
 	// Time priority not altered if Quantity reduced as does not disadvantage Orders newer than it
 	if (orderQuantity > quantity && orderPrice == price) {
 		orderIterator->quantity = quantity; // Should reduce quantity of Order
+		orderIterator->timestamp = timestamp;
 	}
 	else {
 		Order newOrder;
@@ -181,14 +213,14 @@ void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Sid
 		newOrder.price = price;
 		newOrder.quantity = quantity;
 		newOrder.side = side;
-		newOrder.timestamp = orderTime;
+		newOrder.timestamp = timestamp;
 		cancelOrder(orderID);
 		addOrder(newOrder);
 	}
 }
 
 std::list<Order>::iterator OrderBook::getOrderInformation(OrderID orderID) {
-	
+
 	bool successFlag = true;
 	std::list<Order>::iterator orderIterator = searchOrderByID(orderID, successFlag);
 
@@ -200,4 +232,44 @@ std::list<Order>::iterator OrderBook::getOrderInformation(OrderID orderID) {
 	std::cout << std::format("Order {} Found\nPrice: {}\nQuantity: {}\nSide: {}\nTimestamp: {}\n", orderIterator->orderID, orderIterator->price, orderIterator->quantity, (orderIterator->side == Side::BUY) ? "Bid" : "Ask", orderIterator->timestamp);
 	std::cout << "------------------\n";
 	return orderIterator;
+}
+
+std::chrono::microseconds OrderBook::getOrderTimestamp() {
+	auto currentTime = std::chrono::steady_clock::now();
+	return std::chrono::duration_cast<std::chrono::microseconds>(currentTime - start);
+}
+
+void OrderBook::marketData(uint16_t numberOfRows) {
+
+	std::map<Price, std::list<Order>>::iterator BidIterator;
+	std::map<Price, std::list<Order>>::iterator AskIterator;
+	std::list<Order>::iterator OrderIterator;
+	uint16_t countBid{ 0 };
+	uint16_t countAsk{ 0 };
+	uint32_t orderCountBid{ 0 };
+	uint32_t orderCountAsk{ 0 };
+	uint32_t quantityRequestedBid{ 0 };
+	uint32_t quantityRequestedAsk{ 0 };
+
+	// Prevents attempting of printing beyond Book Size
+	auto rowsPrintBid = (numberOfRows < BidBook.size()) ? numberOfRows : BidBook.size();
+	auto rowsPrintAsk = (numberOfRows < AskBook.size()) ? numberOfRows : AskBook.size();
+
+	for (BidIterator = BidBook.begin(); countBid < rowsPrintBid; BidIterator++) {
+		for (OrderIterator = BidIterator->second.begin(); orderCountBid < BidIterator->second.size(); OrderIterator++) {
+			quantityRequestedBid += OrderIterator->quantity;
+			orderCountBid++;
+		}
+		std::cout << std::format("| Price : {} | No. Orders : {} | Total Quantity : {} | Total Market Cap : {} | Side : {} |\n", BidIterator->first, BidIterator->second.size(), quantityRequestedBid, (BidIterator->first * quantityRequestedBid), "Bid");
+		countBid++;
+	}
+
+	for (AskIterator = AskBook.begin(); countAsk < rowsPrintAsk; AskIterator++) {
+		for (OrderIterator = AskIterator->second.begin(); orderCountAsk < AskIterator->second.size(); OrderIterator++) {
+			quantityRequestedAsk += OrderIterator->quantity;
+			orderCountAsk++;
+		}
+		std::cout << std::format("| Price : {} | No. Orders : {} | Total Quantity : {} | Total Market Cap : {} | Side : {} |\n", AskIterator->first, AskIterator->second.size(), quantityRequestedAsk, (AskIterator->first * quantityRequestedAsk), "Ask");
+		countAsk++;
+	}
 }
