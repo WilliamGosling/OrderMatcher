@@ -41,30 +41,7 @@ void OrderBook::removeOrder(const Price price, const enum Side side) {
 
 void OrderBook::matchOrder() {
 
-
-	/*if (bestBid->first >= bestAsk->first) {
-		std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
-		if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
-			OrderIDMap.erase(bestAsk->second.front().orderID);
-			OrderIDMap.erase(bestBid->second.front().orderID);
-			removeOrder(bestBid->first, Side::BUY);
-			removeOrder(bestAsk->first, Side::SELL);
-		}
-		else if (bestBid->second.front().quantity > bestAsk->second.front().quantity) {
-			bestBid->second.front().quantity -= bestAsk->second.front().quantity;
-			OrderIDMap.erase(bestAsk->second.front().orderID);
-			removeOrder(bestAsk->first, Side::SELL);
-			matchOrder();
-		}
-		else {
-			bestAsk->second.front().quantity -= bestBid->second.front().quantity;
-			OrderIDMap.erase(bestBid->second.front().orderID);
-			removeOrder(bestBid->first, Side::BUY);
-			matchOrder();
-		}
-		return;
-	} */
-	while (!BidBook.empty() || !AskBook.empty()) {
+	while (!BidBook.empty() && !AskBook.empty()) {
 
 		auto bestBid = BidBook.begin();
 		auto bestAsk = AskBook.begin();
@@ -75,17 +52,20 @@ void OrderBook::matchOrder() {
 
 		std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
 		if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
+			tradeLog.insertExecutedTrades(bestBid->second.front().orderID, bestAsk->second.front().orderID, bestBid->second.front().quantity, bestAsk->second.front().price);
 			OrderIDMap.erase(bestAsk->second.front().orderID);
 			OrderIDMap.erase(bestBid->second.front().orderID);
 			removeOrder(bestBid->first, Side::BUY);
 			removeOrder(bestAsk->first, Side::SELL);
 		}
 		else if (bestBid->second.front().quantity > bestAsk->second.front().quantity) {
+			tradeLog.insertExecutedTrades(bestBid->second.front().orderID, bestAsk->second.front().orderID, bestAsk->second.front().quantity, bestAsk->second.front().price);
 			bestBid->second.front().quantity -= bestAsk->second.front().quantity;
 			OrderIDMap.erase(bestAsk->second.front().orderID);
 			removeOrder(bestAsk->first, Side::SELL);
 		}
 		else {
+			tradeLog.insertExecutedTrades(bestBid->second.front().orderID, bestAsk->second.front().orderID, bestBid->second.front().quantity, bestAsk->second.front().price);
 			bestAsk->second.front().quantity -= bestBid->second.front().quantity;
 			OrderIDMap.erase(bestBid->second.front().orderID);
 			removeOrder(bestBid->first, Side::BUY);
@@ -94,6 +74,46 @@ void OrderBook::matchOrder() {
 	}
 
 	std::cout << "No matching orders\n";
+}
+
+void OrderBook::matchOrder(Order& order) {
+
+	if (order.type != OrderType::MARKET) {
+		std::cout << "OrderType is not of type : MARKET\n";
+		return;
+	}
+
+	while (order.quantity > 0 && !AskBook.empty() && !BidBook.empty()) {
+		auto bestOrder = (order.side == Side::BUY) ? AskBook.begin() : BidBook.begin();
+		if (order.quantity > bestOrder->second.front().quantity) {
+			order.quantity -= bestOrder->second.front().quantity;
+			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.front().orderID;
+			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.front().orderID;
+			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.front().price, bestOrder->second.front().quantity);
+			OrderIDMap.erase(bestOrder->second.front().orderID);
+			removeOrder(bestOrder->first, bestOrder->second.front().side);
+		}
+		else if (order.quantity < bestOrder->second.front().quantity) {
+			bestOrder->second.front().quantity -= order.quantity;
+			order.quantity -= order.quantity;
+			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.front().orderID;
+			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.front().orderID;
+			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.front().price, bestOrder->second.front().quantity);
+			order.status = Status::FILLED;
+			FilledOrderMap[order.orderID] = bestOrder->second.front(); // Move Filled Market orders into a Filled Map
+		}
+		else if (order.quantity == bestOrder->second.front().quantity) {
+			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.front().orderID;
+			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.front().orderID;
+			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.front().price, bestOrder->second.front().quantity);
+			bestOrder->second.front().quantity = 0;
+			order.quantity = 0;
+			order.status = Status::FILLED;
+			FilledOrderMap[order.orderID] = bestOrder->second.front(); // Move Filled Market orders into a Filled Map
+			OrderIDMap.erase(bestOrder->second.front().orderID); // Removes opposite order from ID Iterator Map
+			removeOrder(bestOrder->first, bestOrder->second.front().side); // Removes order from book
+		}
+	}
 }
 
 // Prints the full OrderBook
@@ -205,7 +225,6 @@ void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Sid
 	// Time priority not altered if Quantity reduced as does not disadvantage Orders newer than it
 	if (orderQuantity > quantity && orderPrice == price) {
 		orderIterator->quantity = quantity; // Should reduce quantity of Order
-		orderIterator->timestamp = timestamp;
 	}
 	else {
 		Order newOrder;
@@ -256,6 +275,8 @@ void OrderBook::marketData(uint16_t numberOfRows) {
 	auto rowsPrintAsk = (numberOfRows < AskBook.size()) ? numberOfRows : AskBook.size();
 
 	for (BidIterator = BidBook.begin(); countBid < rowsPrintBid; BidIterator++) {
+		quantityRequestedBid = 0;
+		orderCountBid = 0;
 		for (OrderIterator = BidIterator->second.begin(); orderCountBid < BidIterator->second.size(); OrderIterator++) {
 			quantityRequestedBid += OrderIterator->quantity;
 			orderCountBid++;
@@ -265,6 +286,8 @@ void OrderBook::marketData(uint16_t numberOfRows) {
 	}
 
 	for (AskIterator = AskBook.begin(); countAsk < rowsPrintAsk; AskIterator++) {
+		quantityRequestedAsk = 0;
+		orderCountAsk = 0;
 		for (OrderIterator = AskIterator->second.begin(); orderCountAsk < AskIterator->second.size(); OrderIterator++) {
 			quantityRequestedAsk += OrderIterator->quantity;
 			orderCountAsk++;
