@@ -31,4 +31,42 @@ struct Order {
 	Side side;
 	OrderType type;
 	Status status;
+
+	Order* prev = nullptr;
+	Order* next = nullptr;
+};
+
+struct PriceLevel {
+	Order* head = nullptr;
+	Order* tail = nullptr;
+	uint32_t count = 0;
+
+	bool empty() const { return head == nullptr; }
+
+	void push_back(Order* order) {
+		order->next = nullptr;
+		order->prev = tail;
+		if (tail) tail->next = order;
+		else head = order; // First order in list
+		tail = order;
+		count++;
+	}
+
+	void pop_front() {
+		if (!head) return;
+
+		head = head->next;
+		if (head) head->prev = nullptr;
+		else tail = nullptr; // List is empty
+		count--;
+	}
+
+	void erase(Order* order) {
+		if (order->prev) order->prev->next = order->next;
+		else head = order->next;
+
+		if (order->next) order->next->prev = order->prev;
+		else tail = order->prev;
+		count--;
+	}
 };

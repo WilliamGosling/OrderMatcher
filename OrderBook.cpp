@@ -1,50 +1,67 @@
 #include "OrderBook.h"
 
-OrderBook::OrderBook() 
+OrderBook::OrderBook()
 	: memoryPool(),
-	  BidBook(&memoryPool),
-	  AskBook(&memoryPool),
-	  OrderIDMap(&memoryPool),
-	  FilledOrderMap(&memoryPool)
+	BidBook(&memoryPool),
+	AskBook(&memoryPool),
+	OrderIDVector(50000000, nullptr),
+	FilledOrderMap(&memoryPool)
 {
 }
 
-void OrderBook::addOrder(const Order& newOrder) {
+void OrderBook::addOrder(Order& newOrder) {
 
-	if (OrderIDMap.find(newOrder.orderID) != OrderIDMap.end()) {
-		//std::cout << std::format("Order with ID : {} already exists\n", newOrder.orderID);
-		return;
-	}
+	if (newOrder.orderID >= OrderIDVector.size()) { return; }
+
+	if (OrderIDVector[newOrder.orderID] != nullptr) { return; }
+
+	void* memory = memoryPool.allocate(sizeof(Order), alignof(Order));
+	Order* order = new(memory) Order(newOrder);
+	order->prev = nullptr;
+	order->next = nullptr;
 
 	switch (newOrder.side) {
 	case Side::BUY:
-		BidBook[newOrder.price].push_back(newOrder);
-		OrderIDMap[newOrder.orderID] = std::prev(BidBook[newOrder.price].end());
+		BidBook[order->price].push_back(order);
 		break;
 	case Side::SELL:
-		AskBook[newOrder.price].push_back(newOrder);
-		OrderIDMap[newOrder.orderID] = std::prev(AskBook[newOrder.price].end());
+		AskBook[order->price].push_back(order);
 		break;
 	default:
 		std::cout << "Invalid Order\n";
 	}
-	
-	//auto addedTime = static_cast<uint64_t>(getOrderTimestamp().count());
-	//std::cout << std::format(" Order {} Added @ {}\n", newOrder.orderID, addedTime);
+	OrderIDVector[order->orderID] = order;
 }
 void OrderBook::removeOrder(const Price price, const enum Side side) {
+	Order* targetOrder = nullptr;
 
-	switch (side) {
-	case Side::BUY:
-		BidBook.at(price).pop_front();
-		if (BidBook.at(price).empty()) BidBook.erase(price);
-		break;
-	case Side::SELL:
-		AskBook.at(price).pop_front();
-		if (AskBook.at(price).empty()) AskBook.erase(price);
-		break;
-	default:
-		std::cout << "Invalid Order\n";
+	if (side == Side::BUY) {
+		auto it = BidBook.find(price);
+		if (it != BidBook.end()) {
+			targetOrder = it->second.head;
+			it->second.pop_front();
+
+			if (it->second.empty()) {
+				BidBook.erase(it);
+			}
+		}
+	}
+	else {
+		auto it = AskBook.find(price);
+		
+		if (it != AskBook.end()) {
+			targetOrder = it->second.head;
+			it->second.pop_front();
+
+			if (it->second.empty()) {
+				AskBook.erase(it);
+			}
+		}
+	}
+
+	if (targetOrder) {
+		targetOrder ->~Order();
+		memoryPool.deallocate(targetOrder, sizeof(Order), alignof(Order));
 	}
 }
 
@@ -59,24 +76,23 @@ void OrderBook::matchOrder() {
 			break;
 		}
 
-		//std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
-		if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
-			tradeLog.insertExecutedTrades(bestBid->second.front().orderID, bestAsk->second.front().orderID, bestBid->second.front().quantity, bestAsk->second.front().price);
-			OrderIDMap.erase(bestAsk->second.front().orderID);
-			OrderIDMap.erase(bestBid->second.front().orderID);
+		if (bestBid->second.head->quantity == bestAsk->second.head->quantity) {
+			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID, bestBid->second.head->quantity, bestAsk->second.head->price);
+			OrderIDVector[bestAsk->second.head->orderID] = nullptr;
+			OrderIDVector[bestBid->second.head->orderID] = nullptr;
 			removeOrder(bestBid->first, Side::BUY);
 			removeOrder(bestAsk->first, Side::SELL);
 		}
-		else if (bestBid->second.front().quantity > bestAsk->second.front().quantity) {
-			tradeLog.insertExecutedTrades(bestBid->second.front().orderID, bestAsk->second.front().orderID, bestAsk->second.front().quantity, bestAsk->second.front().price);
-			bestBid->second.front().quantity -= bestAsk->second.front().quantity;
-			OrderIDMap.erase(bestAsk->second.front().orderID);
+		else if (bestBid->second.head->quantity > bestAsk->second.head->quantity) {
+			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID, bestAsk->second.head->quantity, bestAsk->second.head->price);
+			bestBid->second.head->quantity -= bestAsk->second.head->quantity;
+			OrderIDVector[bestAsk->second.head->orderID] = nullptr;
 			removeOrder(bestAsk->first, Side::SELL);
 		}
 		else {
-			tradeLog.insertExecutedTrades(bestBid->second.front().orderID, bestAsk->second.front().orderID, bestBid->second.front().quantity, bestAsk->second.front().price);
-			bestAsk->second.front().quantity -= bestBid->second.front().quantity;
-			OrderIDMap.erase(bestBid->second.front().orderID);
+			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID, bestBid->second.head->quantity, bestAsk->second.head->price);
+			bestAsk->second.head->quantity -= bestBid->second.head->quantity;
+			OrderIDVector[bestBid->second.head->orderID] = nullptr;
 			removeOrder(bestBid->first, Side::BUY);
 
 		}
@@ -94,33 +110,33 @@ void OrderBook::matchOrder(Order& order) {
 
 	while (order.quantity > 0 && !AskBook.empty() && !BidBook.empty()) {
 		auto bestOrder = (order.side == Side::BUY) ? AskBook.begin() : BidBook.begin();
-		if (order.quantity > bestOrder->second.front().quantity) {
-			order.quantity -= bestOrder->second.front().quantity;
-			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.front().orderID;
-			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.front().orderID;
-			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.front().price, bestOrder->second.front().quantity);
-			OrderIDMap.erase(bestOrder->second.front().orderID);
-			removeOrder(bestOrder->first, bestOrder->second.front().side);
+		if (order.quantity > bestOrder->second.head->quantity) {
+			order.quantity -= bestOrder->second.head->quantity;
+			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
+			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.head->orderID;
+			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
+			OrderIDVector[bestOrder->second.head->orderID] = nullptr;
+			removeOrder(bestOrder->first, bestOrder->second.head->side);
 		}
-		else if (order.quantity < bestOrder->second.front().quantity) {
-			bestOrder->second.front().quantity -= order.quantity;
+		else if (order.quantity < bestOrder->second.head->quantity) {
+			bestOrder->second.head->quantity -= order.quantity;
 			order.quantity -= order.quantity;
-			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.front().orderID;
-			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.front().orderID;
-			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.front().price, bestOrder->second.front().quantity);
+			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
+			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.head->orderID;
+			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
 			order.status = Status::FILLED;
-			FilledOrderMap[order.orderID] = bestOrder->second.front(); // Move Filled Market orders into a Filled Map
+			FilledOrderMap[order.orderID] = bestOrder->second.head; // Move Filled Market orders into a Filled Map
 		}
-		else if (order.quantity == bestOrder->second.front().quantity) {
-			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.front().orderID;
-			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.front().orderID;
-			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.front().price, bestOrder->second.front().quantity);
-			bestOrder->second.front().quantity = 0;
+		else if (order.quantity == bestOrder->second.head->quantity) {
+			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
+			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.head->orderID;
+			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
+			bestOrder->second.head->quantity = 0;
 			order.quantity = 0;
 			order.status = Status::FILLED;
-			FilledOrderMap[order.orderID] = bestOrder->second.front(); // Move Filled Market orders into a Filled Map
-			OrderIDMap.erase(bestOrder->second.front().orderID); // Removes opposite order from ID Iterator Map
-			removeOrder(bestOrder->first, bestOrder->second.front().side); // Removes order from book
+			FilledOrderMap[order.orderID] = bestOrder->second.head; // Move Filled Market orders into a Filled Map
+			OrderIDVector[bestOrder->second.head->orderID] = nullptr;
+			removeOrder(bestOrder->first, bestOrder->second.head->side); // Removes order from book
 		}
 	}
 }
@@ -128,15 +144,16 @@ void OrderBook::matchOrder(Order& order) {
 // Prints the full OrderBook
 void OrderBook::printBook() {
 	std::cout << "-------------BidBook-------------\n";
-	for (auto pair : BidBook) {
-		for (auto orders : pair.second) {
-			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", orders.orderID, pair.first, orders.quantity, orders.timestamp);
+	for (const auto& pair : BidBook) {
+		for (Order* current = pair.second.head; current != nullptr; current = current->next) {
+			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", current->orderID, pair.first, current->quantity, current->timestamp);
 		}
 	}
+
 	std::cout << "---------------------------------\n-------------AskBook-------------\n";
-	for (auto pair : AskBook) {
-		for (auto orders : pair.second) {
-			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", orders.orderID, pair.first, orders.quantity, orders.timestamp);
+	for (const auto& pair : AskBook) {
+		for (Order* current = pair.second.head; current != nullptr; current = current->next) {
+			std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: SELL | Timestamp: {} |\n", current->orderID, pair.first, current->quantity, current->timestamp);
 		}
 	}
 	std::cout << "---------------------------------\n";
@@ -146,94 +163,87 @@ void OrderBook::printBook(Side side) {
 
 	if (side == Side::BUY) {
 		std::cout << "-------------BidBook-------------\n";
-		for (auto pair : BidBook) {
-			for (auto orders : pair.second) {
-				std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", orders.orderID, pair.first, orders.quantity, orders.timestamp);
+		for (const auto& pair : BidBook) {
+			for (Order* current = pair.second.head; current != nullptr; current = current->next) {
+				std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", current->orderID, pair.first, current->quantity, current->timestamp);
 			}
 		}
 	}
 	else {
 		std::cout << "-------------AskBook-------------\n";
-		for (auto pair : AskBook) {
-			for (auto orders : pair.second) {
-				std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: BUY | Timestamp: {} |\n", orders.orderID, pair.first, orders.quantity, orders.timestamp);
+		for (const auto& pair : AskBook) {
+			for (Order* current = pair.second.head; current != nullptr; current = current->next) {
+				std::cout << std::format("Order {} | Price : {} | Quantity: {} | Side: SELL | Timestamp: {} |\n", current->orderID, pair.first, current->quantity, current->timestamp);
 			}
 		}
 	}
 	std::cout << "---------------------------------\n";
 }
 
-std::list<Order>::iterator OrderBook::searchOrderByID(OrderID orderID, bool& successFlag) {
-
-	std::list<Order>::iterator iterator;
-
+Order* OrderBook::searchOrderByID(OrderID orderID, bool& successFlag) {
 	if (!orderID) {
 		std::cout << "Invalid Order ID\n";
 		successFlag = false;
-		return iterator;
+		return nullptr;
 	}
 
-	auto mapOrderID = OrderIDMap.find(orderID);
+	if (orderID >= OrderIDVector.size()) {
+		return nullptr;
+	}
 
-	if (mapOrderID == OrderIDMap.end()) {
+	auto targetOrder = OrderIDVector[orderID];
+
+	if (!targetOrder) {
 		std::cout << "Order not found\n";
 		successFlag = false;
-		return iterator;
+		return nullptr;
 	}
 
-	iterator = mapOrderID->second;
-
 	successFlag = true;
-	return iterator;
+	return targetOrder;
 }
 
 void OrderBook::cancelOrder(OrderID orderID) {
 
 	bool successFlag = true;
-	std::list<Order>::iterator orderIterator = searchOrderByID(orderID, successFlag);
+	Order* targetOrder = searchOrderByID(orderID, successFlag);
 
 	if (!successFlag) {
-		std::cout << "Iterator not found | <OrderBook::cancelOrder>\n";
+		std::cout << "Order not found | <OrderBook::cancelOrder>\n";
 		return;
 	}
 
-	Side orderSide = orderIterator->side;
-	Price orderPrice = orderIterator->price;
+	Price orderPrice = targetOrder->price;
 
-	if (orderSide == Side::BUY) {
-		BidBook.at(orderPrice).erase(orderIterator);
-		if (BidBook.at(orderPrice).empty()) {
-			BidBook.erase(orderPrice);
-		}
+	if (targetOrder->side == Side::BUY) {
+		BidBook.at(orderPrice).erase(targetOrder);
+		if (BidBook.at(orderPrice).empty()) { BidBook.erase(orderPrice); }
 	}
 	else {
-		AskBook.at(orderPrice).erase(orderIterator);
-		if (AskBook.at(orderPrice).empty()) {
-			AskBook.erase(orderPrice);
-		}
+		AskBook.at(orderPrice).erase(targetOrder);
+		if (AskBook.at(orderPrice).empty()) { AskBook.erase(orderPrice); }
 	}
-	OrderIDMap.erase(orderID);
-	auto cancelledTime = static_cast<uint64_t>(getOrderTimestamp().count());
-
-	std::cout << std::format(" Order {} Cancelled @ {}\n", orderID, cancelledTime);
+	OrderIDVector[orderID] = nullptr;
+	targetOrder->~Order();
+	memoryPool.deallocate(targetOrder, sizeof(Order), alignof(Order));
 }
 
 void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Side side, Timestamp timestamp) {
 
 	bool successFlag = true;
-	std::list<Order>::iterator orderIterator = searchOrderByID(orderID, successFlag);
+	Order* targetOrder = searchOrderByID(orderID, successFlag);
 
 	if (!successFlag) {
 		std::cout << "Iterator not found | <OrderBook::modifyOrder>\n";
 		return;
 	}
 
-	Price orderPrice = orderIterator->price;
-	Quantity orderQuantity = orderIterator->quantity;
+	Price orderPrice = targetOrder->price;
+	Quantity orderQuantity = targetOrder->quantity;
 
 	// Time priority not altered if Quantity reduced as does not disadvantage Orders newer than it
 	if (orderQuantity > quantity && orderPrice == price) {
-		orderIterator->quantity = quantity; // Should reduce quantity of Order
+		targetOrder->quantity = quantity; // Should reduce quantity of Order
 	}
 	else {
 		Order newOrder;
@@ -247,19 +257,19 @@ void OrderBook::modifyOrder(OrderID orderID, Price price, Quantity quantity, Sid
 	}
 }
 
-std::list<Order>::iterator OrderBook::getOrderInformation(OrderID orderID) {
+Order* OrderBook::getOrderInformation(OrderID orderID) {
 
 	bool successFlag = true;
-	std::list<Order>::iterator orderIterator = searchOrderByID(orderID, successFlag);
+	Order* targetOrder = searchOrderByID(orderID, successFlag);
 
 	if (!successFlag) {
 		std::cout << "Iterator not found | <OrderBook::cancelOrder>\n";
-		return orderIterator;
+		return targetOrder;
 	}
 
-	std::cout << std::format("Order {} Found\nPrice: {}\nQuantity: {}\nSide: {}\nTimestamp: {}\n", orderIterator->orderID, orderIterator->price, orderIterator->quantity, (orderIterator->side == Side::BUY) ? "Bid" : "Ask", orderIterator->timestamp);
+	std::cout << std::format("Order {} Found\nPrice: {}\nQuantity: {}\nSide: {}\nTimestamp: {}\n", targetOrder->orderID, targetOrder->price, targetOrder->quantity, (targetOrder->side == Side::BUY) ? "Bid" : "Ask", targetOrder->timestamp);
 	std::cout << "------------------\n";
-	return orderIterator;
+	return targetOrder;
 }
 
 std::chrono::microseconds OrderBook::getOrderTimestamp() {
@@ -269,13 +279,10 @@ std::chrono::microseconds OrderBook::getOrderTimestamp() {
 
 void OrderBook::marketData(uint16_t numberOfRows) {
 
-	std::map<Price, std::pmr::list<Order>>::iterator BidIterator;
-	std::map<Price, std::pmr::list<Order>>::iterator AskIterator;
-	std::list<Order>::iterator OrderIterator;
+	std::map<Price, PriceLevel>::iterator BidIterator;
+	std::map<Price, PriceLevel>::iterator AskIterator;
 	uint16_t countBid{ 0 };
 	uint16_t countAsk{ 0 };
-	uint32_t orderCountBid{ 0 };
-	uint32_t orderCountAsk{ 0 };
 	uint32_t quantityRequestedBid{ 0 };
 	uint32_t quantityRequestedAsk{ 0 };
 
@@ -285,23 +292,22 @@ void OrderBook::marketData(uint16_t numberOfRows) {
 
 	for (BidIterator = BidBook.begin(); countBid < rowsPrintBid; BidIterator++) {
 		quantityRequestedBid = 0;
-		orderCountBid = 0;
-		for (OrderIterator = BidIterator->second.begin(); orderCountBid < BidIterator->second.size(); OrderIterator++) {
-			quantityRequestedBid += OrderIterator->quantity;
-			orderCountBid++;
+
+		// Manual intrusive list traversal
+		for (Order* current = BidIterator->second.head; current != nullptr; current = current->next) {
+			quantityRequestedBid += current->quantity;
 		}
-		std::cout << std::format("| Price : {} | No. Orders : {} | Total Quantity : {} | Total Market Cap : {} | Side : {} |\n", BidIterator->first, BidIterator->second.size(), quantityRequestedBid, (BidIterator->first * quantityRequestedBid), "Bid");
+		std::cout << std::format("| Price : {} | No. Orders : {} | Total Quantity : {} | Total Market Cap : {} | Side : {} |\n", BidIterator->first, BidIterator->second.count, quantityRequestedBid, (BidIterator->first * quantityRequestedBid), "Bid");
 		countBid++;
 	}
 
 	for (AskIterator = AskBook.begin(); countAsk < rowsPrintAsk; AskIterator++) {
 		quantityRequestedAsk = 0;
-		orderCountAsk = 0;
-		for (OrderIterator = AskIterator->second.begin(); orderCountAsk < AskIterator->second.size(); OrderIterator++) {
-			quantityRequestedAsk += OrderIterator->quantity;
-			orderCountAsk++;
+
+		for (Order* current = AskIterator->second.head; current != nullptr; current = current->next) {
+			quantityRequestedAsk += current->quantity;
 		}
-		std::cout << std::format("| Price : {} | No. Orders : {} | Total Quantity : {} | Total Market Cap : {} | Side : {} |\n", AskIterator->first, AskIterator->second.size(), quantityRequestedAsk, (AskIterator->first * quantityRequestedAsk), "Ask");
+		std::cout << std::format("| Price : {} | No. Orders : {} | Total Quantity : {} | Total Market Cap : {} | Side : {} |\n", AskIterator->first, AskIterator->second.count, quantityRequestedAsk, (AskIterator->first * quantityRequestedAsk), "Ask");
 		countAsk++;
 	}
 }
