@@ -7,6 +7,9 @@
 #include <format>
 #include <chrono>
 #include <atomic>
+#include <memory_resource>
+#include <vector>
+#include <algorithm>
 #include "OrderTypes.h"
 #include "ExecutionLog.h"
 
@@ -20,16 +23,19 @@ using Duration = Clock::duration;
 
 class OrderBook {
 private:
-	std::map<Price, std::list<Order>, std::greater<Price>> BidBook;
-	std::map<Price, std::list<Order>> AskBook;
-	std::unordered_map<OrderID, std::list<Order>::iterator> OrderIDMap;
-	std::unordered_map<OrderID, Order> FilledOrderMap;
+	std::pmr::unsynchronized_pool_resource memoryPool;
+
+	std::pmr::map<Price, std::pmr::list<Order>, std::greater<Price>> BidBook;
+	std::pmr::map<Price, std::pmr::list<Order>> AskBook;
+	std::pmr::unordered_map<OrderID, std::pmr::list<Order>::iterator> OrderIDMap;
+	std::pmr::unordered_map<OrderID, Order> FilledOrderMap;
 
 	std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 
 	ExecutionLog tradeLog;
 
 public:
+	OrderBook();
 	void addOrder(const Order& newOrder); // Adds a new Order
 	void removeOrder(const Price price, const enum Side side); // Removes the Front Order at given Price and Side - Order with the top priority
 	void cancelOrder(OrderID orderID); // Cancels the Order at the given ID

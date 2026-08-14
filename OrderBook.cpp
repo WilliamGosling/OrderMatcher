@@ -1,9 +1,18 @@
 #include "OrderBook.h"
 
+OrderBook::OrderBook() 
+	: memoryPool(),
+	  BidBook(&memoryPool),
+	  AskBook(&memoryPool),
+	  OrderIDMap(&memoryPool),
+	  FilledOrderMap(&memoryPool)
+{
+}
+
 void OrderBook::addOrder(const Order& newOrder) {
 
 	if (OrderIDMap.find(newOrder.orderID) != OrderIDMap.end()) {
-		std::cout << std::format("Order with ID : {} already exists\n", newOrder.orderID);
+		//std::cout << std::format("Order with ID : {} already exists\n", newOrder.orderID);
 		return;
 	}
 
@@ -19,9 +28,9 @@ void OrderBook::addOrder(const Order& newOrder) {
 	default:
 		std::cout << "Invalid Order\n";
 	}
-	auto addedTime = static_cast<uint64_t>(getOrderTimestamp().count());
-
-	std::cout << std::format(" Order {} Added @ {}\n", newOrder.orderID, addedTime);
+	
+	//auto addedTime = static_cast<uint64_t>(getOrderTimestamp().count());
+	//std::cout << std::format(" Order {} Added @ {}\n", newOrder.orderID, addedTime);
 }
 void OrderBook::removeOrder(const Price price, const enum Side side) {
 
@@ -50,7 +59,7 @@ void OrderBook::matchOrder() {
 			break;
 		}
 
-		std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
+		//std::cout << std::format("\nMATCHED | Bid Order ID: {} | Ask Order ID: {} \n", bestBid->second.front().orderID, bestAsk->second.front().orderID);
 		if (bestBid->second.front().quantity == bestAsk->second.front().quantity) {
 			tradeLog.insertExecutedTrades(bestBid->second.front().orderID, bestAsk->second.front().orderID, bestBid->second.front().quantity, bestAsk->second.front().price);
 			OrderIDMap.erase(bestAsk->second.front().orderID);
@@ -260,8 +269,8 @@ std::chrono::microseconds OrderBook::getOrderTimestamp() {
 
 void OrderBook::marketData(uint16_t numberOfRows) {
 
-	std::map<Price, std::list<Order>>::iterator BidIterator;
-	std::map<Price, std::list<Order>>::iterator AskIterator;
+	std::map<Price, std::pmr::list<Order>>::iterator BidIterator;
+	std::map<Price, std::pmr::list<Order>>::iterator AskIterator;
 	std::list<Order>::iterator OrderIterator;
 	uint16_t countBid{ 0 };
 	uint16_t countAsk{ 0 };
