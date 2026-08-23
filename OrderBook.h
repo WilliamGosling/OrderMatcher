@@ -41,7 +41,8 @@ public:
 	void cancelOrder(OrderID orderID); // Cancels the Order at the given ID
 	void modifyOrder(OrderID orderID, Price price, Quantity quantity, Side side, Timestamp timestamp);
 	void matchOrder(); // Matches orders at top of priority
-	void matchOrder(Order& order); // Matches the given Market Order with Orders in opposite Side book until full
+	void matchOrderMarket(Order& order); // Matches the given Market Order with Orders in opposite Side book until full
+	void matchOrderFOK(Order& order); // Matches the given FOK order with orders in opposite Side book 
 	void printBook(); // Prints entire state of OrderBook
 	void printBook(Side side); // Prints state of Side's Book
 	void marketData(uint16_t numberOfRows);

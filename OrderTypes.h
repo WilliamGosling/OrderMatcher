@@ -9,11 +9,14 @@ enum class Side : uint8_t {
 enum class OrderType : uint8_t {
 	LIMIT,
 	MARKET,
+	IMMEDIATE_OR_CANCEL,
+	FILL_OR_KILL,
 };
 
 enum class Status : uint8_t {
 	NOT_FILLED,
 	FILLED,
+	KILLED,
 };
 
 struct Trade {

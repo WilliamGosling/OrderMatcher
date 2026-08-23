@@ -39,6 +39,13 @@ void matchOrderTest() {
 	marketOrder.timestamp = static_cast<uint64_t>(book.getOrderTimestamp().count());
 	marketOrder.type = OrderType::MARKET;
 
+	Order marketOrder;
+	marketOrder.orderID = 512;
+	marketOrder.quantity = 100;
+	marketOrder.side = Side::BUY;
+	marketOrder.timestamp = static_cast<uint64_t>(book.getOrderTimestamp().count());
+	marketOrder.type = OrderType::FILL_OR_KILL;
+
 	book.addOrder(BidOrder);
 	book.addOrder(BidOrder2);
 	book.addOrder(AskOrder);
@@ -59,7 +66,9 @@ void matchOrderTest() {
 	book.marketData(1);
 
 	//book.matchOrder();
-	book.matchOrder(marketOrder);
+	book.matchOrderMarket(marketOrder);
+
+
 
 	book.printBook();
 
