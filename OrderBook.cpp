@@ -77,20 +77,20 @@ void OrderBook::matchOrder() {
 		}
 
 		if (bestBid->second.head->quantity == bestAsk->second.head->quantity) {
-			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID, bestBid->second.head->quantity, bestAsk->second.head->price);
+			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID, bestAsk->second.head->price, bestBid->second.head->quantity);
 			OrderIDVector[bestAsk->second.head->orderID] = nullptr;
 			OrderIDVector[bestBid->second.head->orderID] = nullptr;
 			removeOrder(bestBid->first, Side::BUY);
 			removeOrder(bestAsk->first, Side::SELL);
 		}
 		else if (bestBid->second.head->quantity > bestAsk->second.head->quantity) {
-			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID, bestAsk->second.head->quantity, bestAsk->second.head->price);
+			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID,bestAsk->second.head->price, bestAsk->second.head->quantity);
 			bestBid->second.head->quantity -= bestAsk->second.head->quantity;
 			OrderIDVector[bestAsk->second.head->orderID] = nullptr;
 			removeOrder(bestAsk->first, Side::SELL);
 		}
 		else {
-			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID, bestBid->second.head->quantity, bestAsk->second.head->price);
+			tradeLog.insertExecutedTrades(bestBid->second.head->orderID, bestAsk->second.head->orderID, bestAsk->second.head->price, bestBid->second.head->quantity);
 			bestAsk->second.head->quantity -= bestBid->second.head->quantity;
 			OrderIDVector[bestBid->second.head->orderID] = nullptr;
 			removeOrder(bestBid->first, Side::BUY);
@@ -108,7 +108,7 @@ void OrderBook::matchOrderMarket(Order& order) {
 		return;
 	}
 
-	while (order.quantity > 0 && !AskBook.empty() && !BidBook.empty()) {
+	while (order.quantity > 0 && (order.side == Side::BUY ? !AskBook.empty() : !BidBook.empty())) {
 		auto bestOrder = (order.side == Side::BUY) ? AskBook.begin() : BidBook.begin();
 		if (order.quantity > bestOrder->second.head->quantity) {
 			order.quantity -= bestOrder->second.head->quantity;
@@ -142,160 +142,85 @@ void OrderBook::matchOrderMarket(Order& order) {
 }
 
 void OrderBook::matchOrderFOK(Order& order) {
-
 	if (order.type != OrderType::FILL_OR_KILL) {
 		std::cout << "OrderType is not of type : FILL_OR_KILL\n";
 		return;
 	}
-	if ((order.side == Side::BUY) ? AskBook.empty() : BidBook.empty()) {
-		std::cout << "Order books are empty - <matchOrderFOK>\n";
+
+	uint32_t availableQuantity = 0;
+
+	if (order.side == Side::BUY) {
+		for (auto it = AskBook.begin(); it != AskBook.end() && it->first <= order.price; ++it) {
+			for (Order* curr = it->second.head; curr != nullptr; curr = curr->next) {
+				availableQuantity += curr->quantity;
+				if (availableQuantity >= order.quantity) {
+					break;
+				}
+			}
+			if (availableQuantity >= order.quantity) {
+				break;
+			}
+		}
+	}
+	else { // Side::SELL
+		for (auto it = BidBook.begin(); it != BidBook.end() && it->first >= order.price; ++it) {
+			for (Order* curr = it->second.head; curr != nullptr; curr = curr->next) {
+				availableQuantity += curr->quantity;
+				if (availableQuantity >= order.quantity) {
+					break;
+				}
+			}
+			if (availableQuantity >= order.quantity) {
+				break;
+			}
+		}
+	}
+
+	// Cannot fully fill within price limit
+	if (availableQuantity < order.quantity) {
+		std::cout << std::format("Unsuitable Order Quantity in book to fill Order #{}\n", order.orderID);
+		order.status = Status::KILLED;
 		return;
 	}
 
-	auto bestOrder = (order.side == Side::BUY) ? AskBook.begin() : BidBook.begin(); // Picks top priority Order of the opposite book
+	if (order.side == Side::BUY) {
+		while (order.quantity > 0 && !AskBook.empty()) {
+			auto bestAsk = AskBook.begin();
+			Order* restingOrder = bestAsk->second.head;
 
-	if ((order.side == Side::BUY && order.price < bestOrder->second.head->price) || (order.side == Side::SELL && order.price > bestOrder->second.head->price)) {
-		std::cout << std::format("FOK Order {} unable to be filled due to insufficient orders at the given price - <matchOrderFOK>\n", order.orderID);
-		return;
-	}
+			uint32_t fillQty = std::min(order.quantity, restingOrder->quantity);
+			tradeLog.insertExecutedTrades(order.orderID, restingOrder->orderID, bestAsk->first, fillQty);
 
-	auto currentPrice = bestOrder->first;
-	auto runningTotal = 0;
-	auto currentOrder = (order.side == Side::BUY) ? AskBook.begin()->second.head : BidBook.begin()->second.head;
-	auto currentPriceLevel = bestOrder;
+			order.quantity -= fillQty;
+			restingOrder->quantity -= fillQty;
 
-	if (order.side == Side::SELL) {
-		while (currentPrice >= order.price && currentPriceLevel != BidBook.end()) {
-			runningTotal += currentOrder->quantity;
-			if (currentOrder->next == nullptr) currentPriceLevel++;
-			currentOrder = (currentOrder->next == nullptr) ? currentPriceLevel->second.head : currentOrder->next;
-			currentPrice = currentPriceLevel->first;
-		}
-		if (runningTotal < order.quantity) {
-			std::cout << std::format("Unsuitable Order Quantity in book to fill Order #{}\n", order.orderID); // Not enough quantity to fill order
-			order.status = Status::KILLED;
-			return;
-		}
-
-		currentPriceLevel = bestOrder;
-		currentOrder = bestOrder->second.head;
-		auto buyerID = currentOrder->orderID;
-		auto sellerID = order.orderID;
-
-		while (order.quantity > 0) {
-
-			buyerID = currentOrder->orderID;
-			sellerID = order.orderID;
-
-			if (runningTotal >= currentOrder->quantity) {
-				tradeLog.insertExecutedTrades(buyerID, sellerID, currentPriceLevel->first, currentOrder->quantity);
-				order.quantity -= currentOrder->quantity;
-				runningTotal -= currentOrder->quantity;
-				OrderIDVector[currentOrder->orderID] = nullptr;
-				if (currentOrder->next == nullptr) currentOrder = currentPriceLevel->second.head;
-				removeOrder(currentPriceLevel->first, Side::BUY);
+			if (restingOrder->quantity == 0) {
+				OrderIDVector[restingOrder->orderID] = nullptr;
+				removeOrder(bestAsk->first, Side::SELL);
 			}
-			else if (runningTotal < currentOrder->quantity) {
-				tradeLog.insertExecutedTrades(buyerID, sellerID, currentPriceLevel->first, runningTotal);
-				currentOrder->quantity -= runningTotal;
-				order.quantity -= runningTotal; // Should make the value of the order be 0
-				order.status = Status::FILLED;
-				std::cout << "FOK Order Filled\n";
-			}
-			if (currentOrder->next == nullptr) {
-				currentPriceLevel++;
-				currentOrder = currentPriceLevel->second.head;
-				
-			}
-			else { currentOrder = currentOrder->next; }
 		}
 	}
-	else {
-		while (currentPrice <= order.price && currentPriceLevel != AskBook.end()) {
-			runningTotal += currentOrder->quantity;
-			currentPriceLevel++;
-			currentOrder = (currentOrder->next == nullptr) ? currentPriceLevel->second.head : currentOrder->next;
-			currentPrice = currentPriceLevel->first;
-		}
-		if (runningTotal < order.quantity) {
-			std::cout << std::format("Unsuitable Order Quantity in book to fill Order #{}\n", order.orderID); // Not enough quantity to fill order
-			order.status = Status::KILLED;
-			return;
-		}
+	else { // Side::SELL
+		while (order.quantity > 0 && !BidBook.empty()) {
+			auto bestBid = BidBook.begin();
+			Order* restingOrder = bestBid->second.head;
 
-		currentPriceLevel = bestOrder;
-		currentOrder = bestOrder->second.head;
-		auto buyerID = order.orderID;
-		auto sellerID = currentOrder->orderID;
+			uint32_t fillQty = std::min(order.quantity, restingOrder->quantity);
+			tradeLog.insertExecutedTrades(restingOrder->orderID, order.orderID, bestBid->first, fillQty);
 
-		while (order.quantity > 0) {
+			order.quantity -= fillQty;
+			restingOrder->quantity -= fillQty;
 
-			buyerID = order.orderID;
-			sellerID = currentOrder->orderID;
-
-			if (runningTotal >= currentOrder->quantity) {
-				tradeLog.insertExecutedTrades(buyerID, sellerID, currentPriceLevel->first, currentOrder->quantity);
-				order.quantity -= currentOrder->quantity;
-				runningTotal -= currentOrder->quantity;
-				OrderIDVector[currentOrder->orderID] = nullptr;
-				removeOrder(currentPriceLevel->first, Side::SELL);
+			if (restingOrder->quantity == 0) {
+				OrderIDVector[restingOrder->orderID] = nullptr;
+				removeOrder(bestBid->first, Side::BUY);
 			}
-			else if (runningTotal < currentOrder->quantity) {
-				tradeLog.insertExecutedTrades(buyerID, sellerID, currentPriceLevel->first, runningTotal);
-				currentOrder->quantity -= runningTotal;
-				order.quantity -= runningTotal; // Should make the value of the order be 0
-				order.status = Status::FILLED;
-				std::cout << "FOK Order Filled\n";
-			}
-			currentPriceLevel++;
-			currentOrder = (currentOrder->next == nullptr) ? currentPriceLevel->second.head : currentOrder->next;
 		}
-
-		//if (order.side == Side::BUY && order.price >= bestOrder->second.head->price) {
-		//	if (order.quantity < bestOrder->second.head->quantity) { // Checks that the FOK Order can be filled while leaving remaining quantity
-		//		bestOrder->second.head->quantity -= order.quantity;
-		//		order.quantity -= order.quantity;
-		//		uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
-		//		uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.head->orderID;
-		//		tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
-		//		order.status = Status::FILLED;
-		//		FilledOrderMap[order.orderID] = bestOrder->second.head; // Move Filled FOK Order into a Filled Map
-		//	}
-		//	else if (order.quantity == bestOrder->second.head->quantity) { // Checks both Orders can be successfully filled
-		//		uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
-		//		uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.head->orderID;
-		//		tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
-		//		bestOrder->second.head->quantity = 0;
-		//		order.quantity = 0;
-		//		order.status = Status::FILLED;
-		//		FilledOrderMap[order.orderID] = bestOrder->second.head; // Move FOK Market Order into a Filled Map
-		//		OrderIDVector[bestOrder->second.head->orderID] = nullptr;
-		//		removeOrder(bestOrder->first, bestOrder->second.head->side); // Removes order from book
-		//	}
-		//}
-		//else if (order.side == Side::SELL && order.price <= bestOrder->second.head->price) {
-		//	if (order.quantity < bestOrder->second.head->quantity) { // Checks that the FOK Order can be filled while leaving remaining quantity
-		//		bestOrder->second.head->quantity -= order.quantity;
-		//		order.quantity -= order.quantity;
-		//		uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
-		//		uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.head->orderID;
-		//		tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
-		//		order.status = Status::FILLED;
-		//		FilledOrderMap[order.orderID] = bestOrder->second.head; // Move Filled FOK Order into a Filled Map
-		//	}
-		//	else if (order.quantity == bestOrder->second.head->quantity) { // Checks both Orders can be successfully filled
-		//		uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
-		//		uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.head->orderID;
-		//		tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
-		//		bestOrder->second.head->quantity = 0;
-		//		order.quantity = 0;
-		//		order.status = Status::FILLED;
-		//		FilledOrderMap[order.orderID] = bestOrder->second.head; // Move FOK Market Order into a Filled Map
-		//		OrderIDVector[bestOrder->second.head->orderID] = nullptr;
-		//		removeOrder(bestOrder->first, bestOrder->second.head->side); // Removes order from book
-		//	}
-		//}
 	}
+
+	order.status = Status::FILLED;
+	std::cout << std::format("FOK Order #{} Filled\n", order.orderID);
+}
 	// Prints the full OrderBook
 	void OrderBook::printBook() {
 		std::cout << "-------------BidBook-------------\n";
