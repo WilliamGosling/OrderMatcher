@@ -2,9 +2,7 @@
 
 void ExecutionLog::insertExecutedTrades(uint64_t buyerID, uint64_t sellerID, uint64_t price, uint64_t quantity) {
 
-	Trade newTrade{ buyerID, sellerID, price, quantity };
-
-	TradesExecuted.push_back(newTrade);
+	TradesExecuted.emplace_back(buyerID, sellerID, price, quantity);
 }
 
 void ExecutionLog::printLog() {

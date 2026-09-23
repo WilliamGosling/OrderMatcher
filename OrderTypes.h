@@ -27,13 +27,13 @@ struct Trade {
 };
 
 struct Order {
-	uint64_t orderID;
-	uint64_t price;
-	uint32_t quantity;
-	uint64_t timestamp;
-	Side side;
-	OrderType type;
-	Status status;
+	uint64_t orderID = 0;
+	uint64_t price = 0;
+	uint32_t quantity = 0;
+	uint64_t timestamp = 0;
+	Side side = Side::BUY;
+	OrderType type = OrderType::LIMIT;
+	Status status = Status::NOT_FILLED;
 
 	Order* prev = nullptr;
 	Order* next = nullptr;

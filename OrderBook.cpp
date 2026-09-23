@@ -29,6 +29,7 @@ void OrderBook::addOrder(Order& newOrder) {
 		break;
 	default:
 		std::cout << "Invalid Order\n";
+		return;
 	}
 	OrderIDVector[order->orderID] = order;
 }
@@ -41,6 +42,8 @@ void OrderBook::removeOrder(const Price price, const enum Side side) {
 			targetOrder = it->second.head;
 			it->second.pop_front();
 
+			OrderIDVector[targetOrder->orderID] = nullptr;
+
 			if (it->second.empty()) {
 				BidBook.erase(it);
 			}
@@ -52,6 +55,8 @@ void OrderBook::removeOrder(const Price price, const enum Side side) {
 		if (it != AskBook.end()) {
 			targetOrder = it->second.head;
 			it->second.pop_front();
+
+			OrderIDVector[targetOrder->orderID] = nullptr;
 
 			if (it->second.empty()) {
 				AskBook.erase(it);
@@ -97,8 +102,6 @@ void OrderBook::matchOrder() {
 
 		}
 	}
-
-	std::cout << "No matching orders\n";
 }
 
 void OrderBook::matchOrderMarket(Order& order) {
@@ -117,15 +120,17 @@ void OrderBook::matchOrderMarket(Order& order) {
 			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
 			OrderIDVector[bestOrder->second.head->orderID] = nullptr;
 			removeOrder(bestOrder->first, bestOrder->second.head->side);
+			order.status = Status::KILLED;
 		}
 		else if (order.quantity < bestOrder->second.head->quantity) {
-			bestOrder->second.head->quantity -= order.quantity;
+			uint32_t fillQuantity = order.quantity;
+			bestOrder->second.head->quantity -= fillQuantity;
 			order.quantity -= order.quantity;
 			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
 			uint64_t seller = (order.side == Side::SELL) ? order.orderID : bestOrder->second.head->orderID;
-			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, bestOrder->second.head->quantity);
+			order.quantity = 0;
+			tradeLog.insertExecutedTrades(buyer, seller, bestOrder->second.head->price, fillQuantity);
 			order.status = Status::FILLED;
-			FilledOrderMap[order.orderID] = bestOrder->second.head; // Move Filled Market orders into a Filled Map
 		}
 		else if (order.quantity == bestOrder->second.head->quantity) {
 			uint64_t buyer = (order.side == Side::BUY) ? order.orderID : bestOrder->second.head->orderID;
@@ -134,7 +139,6 @@ void OrderBook::matchOrderMarket(Order& order) {
 			bestOrder->second.head->quantity = 0;
 			order.quantity = 0;
 			order.status = Status::FILLED;
-			FilledOrderMap[order.orderID] = bestOrder->second.head; // Move Filled Market orders into a Filled Map
 			OrderIDVector[bestOrder->second.head->orderID] = nullptr;
 			removeOrder(bestOrder->first, bestOrder->second.head->side); // Removes order from book
 		}
@@ -147,7 +151,7 @@ void OrderBook::matchOrderFOK(Order& order) {
 		return;
 	}
 
-	uint32_t availableQuantity = 0;
+	uint64_t availableQuantity = 0;
 
 	if (order.side == Side::BUY) {
 		for (auto it = AskBook.begin(); it != AskBook.end() && it->first <= order.price; ++it) {
@@ -178,7 +182,7 @@ void OrderBook::matchOrderFOK(Order& order) {
 
 	// Cannot fully fill within price limit
 	if (availableQuantity < order.quantity) {
-		std::cout << std::format("Unsuitable Order Quantity in book to fill Order #{}\n", order.orderID);
+		//std::cout << std::format("Unsuitable Order Quantity in book to fill Order #{}\n", order.orderID);
 		order.status = Status::KILLED;
 		return;
 	}
@@ -219,7 +223,6 @@ void OrderBook::matchOrderFOK(Order& order) {
 	}
 
 	order.status = Status::FILLED;
-	std::cout << std::format("FOK Order #{} Filled\n", order.orderID);
 }
 	// Prints the full OrderBook
 	void OrderBook::printBook() {
@@ -274,7 +277,6 @@ void OrderBook::matchOrderFOK(Order& order) {
 		auto targetOrder = OrderIDVector[orderID];
 
 		if (!targetOrder) {
-			std::cout << "Order not found\n";
 			successFlag = false;
 			return nullptr;
 		}
@@ -320,9 +322,10 @@ void OrderBook::matchOrderFOK(Order& order) {
 
 		Price orderPrice = targetOrder->price;
 		Quantity orderQuantity = targetOrder->quantity;
+		Side orderSide = targetOrder->side;
 
 		// Time priority not altered if Quantity reduced as does not disadvantage Orders newer than it
-		if (orderQuantity > quantity && orderPrice == price) {
+		if (orderQuantity > quantity && orderPrice == price && orderSide == side) {
 			targetOrder->quantity = quantity; // Should reduce quantity of Order
 		}
 		else {
